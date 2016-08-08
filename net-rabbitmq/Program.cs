@@ -14,6 +14,66 @@ namespace net_rabbitmq
         private const string Password = "guest";
         static void Main(string[] args)
         {
+            //createQueueAndExchange();
+            //publishMsg();
+            useDurableQueue();
+        }
+
+        static void useDurableQueue()
+        {
+            Console.WriteLine("Starting RabbitMQ Message Sender");
+            Console.WriteLine();
+            Console.WriteLine();
+            var connectionFactory = new ConnectionFactory
+            {
+                HostName = HostName,
+                Password = Password,
+                UserName = UserName
+            };
+            var connection = connectionFactory.CreateConnection();
+            var model = connection.CreateModel();
+
+            //the queue will live through server restart
+            model.QueueDeclare("Module1.Sample4", true, false, false, null);
+            Console.WriteLine("Queue created");
+
+            var properties = model.CreateBasicProperties();
+            properties.Persistent = false;//see if you want the message live through server restart
+
+            byte[] messageBuffer = Encoding.Default.GetBytes("this is my message");
+            model.BasicPublish("", "Module1.Sample4", properties, messageBuffer);
+            Console.WriteLine("Message sent");
+            Console.ReadLine();
+        }
+
+        static void publishMsg()
+        {
+            Console.WriteLine("Starting RabbitMQ Message Sender");
+            Console.WriteLine();
+            Console.WriteLine();
+            var connectionFactory = new ConnectionFactory
+            {
+                HostName = HostName,
+                Password = Password,
+                UserName = UserName
+            };
+            var connection = connectionFactory.CreateConnection();
+            var model = connection.CreateModel();
+
+            model.QueueDeclare("Module1.Sample3", false, false, false, null);
+            Console.WriteLine("Queue created");
+
+            var properties = model.CreateBasicProperties();
+            properties.Persistent = false;
+
+            byte[] messageBuffer = Encoding.Default.GetBytes("this is my message");
+            model.BasicPublish("", "Module1.Sample3", properties, messageBuffer);
+            Console.WriteLine("Message sent");
+            Console.ReadLine();
+        }
+
+        static void createQueueAndExchange()
+        {
             var connFactory = new RabbitMQ.Client.ConnectionFactory()
             {
                 UserName = UserName,
