@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace net_rabbitmq
@@ -18,7 +19,91 @@ namespace net_rabbitmq
             //createQueueAndExchange();
             //publishMsg();
             //useDurableQueue();
-            oneWayMessaging();
+            //oneWayMessaging();
+            workerQueue();
+        }
+
+        static void receiver2()
+        {
+            Console.WriteLine("Starting RabbitMQ queue processor 1");
+            Console.WriteLine();
+            var connectionFactory = new ConnectionFactory
+            {
+                HostName = HostName,
+                Password = Password,
+                UserName = UserName
+            };
+            var connection2 = connectionFactory.CreateConnection();
+            var model2 = connection2.CreateModel();
+            model2.BasicQos(0, 1, false);//model2 processes 1 msg at a time, instead of a batch of msgs
+
+            var consumer = new QueueingBasicConsumer(model2);
+            model2.BasicConsume("workerQueue", false, consumer);
+            var deliveryArgs = (BasicDeliverEventArgs)consumer.Queue.Dequeue();
+            var message = Encoding.Default.GetString(deliveryArgs.Body);
+            Console.WriteLine("Message Received at queue processor 1 - {0}", message);
+            model2.BasicAck(deliveryArgs.DeliveryTag, false);
+        }
+
+        static void receiver1()
+        {
+            Console.WriteLine("Starting RabbitMQ queue processor 2");
+            Console.WriteLine();
+            var connectionFactory = new ConnectionFactory
+            {
+                HostName = HostName,
+                Password = Password,
+                UserName = UserName
+            };
+            var connection1 = connectionFactory.CreateConnection();
+            var model1 = connection1.CreateModel();
+            model1.BasicQos(0, 1, false);//model2 processes 1 msg at a time, instead of a batch of msgs
+
+            var consumer = new QueueingBasicConsumer(model1);
+            model1.BasicConsume("workerQueue", false, consumer);
+            var deliveryArgs = (BasicDeliverEventArgs)consumer.Queue.Dequeue();
+            var message = Encoding.Default.GetString(deliveryArgs.Body);
+            Console.WriteLine("Message Received at queue processor 2 - {0}", message);
+            model1.BasicAck(deliveryArgs.DeliveryTag, false);
+        }
+
+        static void workerQueue()
+        {
+            Console.WriteLine("Starting RabbitMQ Message Sender");
+            Console.WriteLine();
+            var connectionFactory = new ConnectionFactory
+            {
+                HostName = HostName,
+                Password = Password,
+                UserName = UserName
+            };
+            var connection = connectionFactory.CreateConnection();
+            var model = connection.CreateModel();
+
+            //the queue will live through server restart
+            model.QueueDeclare("workerQueue", true, false, false, null);
+            Console.WriteLine("Queue created");
+
+            var properties = model.CreateBasicProperties();
+            properties.Persistent = true;
+
+            ThreadStart childref = new ThreadStart(receiver1);
+            Console.WriteLine("In Main: Creating the Child thread");
+            Thread childThread = new Thread(childref);
+            childThread.Start();
+
+            ThreadStart childref2 = new ThreadStart(receiver2);
+            Console.WriteLine("In Main: Creating the Child thread 2");
+            Thread childThread2 = new Thread(childref2);
+            childThread2.Start();
+
+            byte[] messageBuffer = Encoding.Default.GetBytes("this is message");
+            byte[] messageBuffer2 = Encoding.Default.GetBytes("this is message2");
+            model.BasicPublish("", "workerQueue", properties, messageBuffer);
+            model.BasicPublish("", "workerQueue", properties, messageBuffer2);
+            Console.WriteLine("Two messages sent");
+
+            Console.ReadLine();
         }
 
         static void oneWayMessaging()
