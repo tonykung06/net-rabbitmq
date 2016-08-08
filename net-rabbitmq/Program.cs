@@ -1,5 +1,6 @@
 ﻿using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.MessagePatterns;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,13 +15,109 @@ namespace net_rabbitmq
         private const string HostName = "localhost";
         private const string UserName = "guest";
         private const string Password = "guest";
+        private static Subscription _subscription2;
+        private static Subscription _subscription3;
         static void Main(string[] args)
         {
             //createQueueAndExchange();
             //publishMsg();
             //useDurableQueue();
             //oneWayMessaging();
-            workerQueue();
+            //workerQueue();
+            pubSubMessaging();
+        }
+
+        private static void Poll2()
+        {
+            var connectionFactory = new ConnectionFactory
+            {
+                HostName = HostName,
+                Password = Password,
+                UserName = UserName
+            };
+            var connection2 = connectionFactory.CreateConnection();
+            var model2 = connection2.CreateModel();
+            model2.BasicQos(0, 1, false);//model2 processes 1 msg at a time, instead of a batch of msgs
+
+            _subscription2 = new Subscription(model2, "pubSubMessagingQueue1");
+
+            while (true) {
+                var deliveryArgs = _subscription2.Next();
+                var message = Encoding.Default.GetString(deliveryArgs.Body);
+                Console.WriteLine("Message received at poll2 - {0}", message);
+                _subscription2.Ack(deliveryArgs);
+                Console.ReadLine();
+            }
+        }
+
+        private static void Poll3()
+        {
+            var connectionFactory = new ConnectionFactory
+            {
+                HostName = HostName,
+                Password = Password,
+                UserName = UserName
+            };
+            var connection3 = connectionFactory.CreateConnection();
+            var model3 = connection3.CreateModel();
+            model3.BasicQos(0, 1, false);//model2 processes 1 msg at a time, instead of a batch of msgs
+
+            _subscription3 = new Subscription(model3, "pubSubMessagingQueue2");
+
+            while (true)
+            {
+                var deliveryArgs = _subscription3.Next();
+                var message = Encoding.Default.GetString(deliveryArgs.Body);
+                Console.WriteLine("Message received at poll3 - {0}", message);
+                _subscription3.Ack(deliveryArgs);
+                Console.ReadLine();
+            }
+        }
+
+        static void pubSubMessaging()
+        {
+            Console.WriteLine("Starting RabbitMQ Message Sender");
+            Console.WriteLine();
+            var connectionFactory = new ConnectionFactory
+            {
+                HostName = HostName,
+                Password = Password,
+                UserName = UserName
+            };
+            var connection = connectionFactory.CreateConnection();
+            var model = connection.CreateModel();
+
+            model.ExchangeDeclare("pubSubMessagingExchange", ExchangeType.Fanout);
+
+            model.QueueDeclare("pubSubMessagingQueue1", true, false, false, null);
+            model.QueueBind("pubSubMessagingQueue1", "pubSubMessagingExchange", "");
+            Console.WriteLine("Queue 1 created");
+
+            model.QueueDeclare("pubSubMessagingQueue2", true, false, false, null);
+            model.QueueBind("pubSubMessagingQueue2", "pubSubMessagingExchange", "");
+            Console.WriteLine("Queue 2 created");
+
+            Console.WriteLine("Starting RabbitMQ queue processor");
+            Console.WriteLine();
+
+            ThreadStart childref = new ThreadStart(Poll2);
+            Console.WriteLine("In Main: Creating the Child thread");
+            Thread childThread = new Thread(childref);
+            childThread.Start();
+
+            ThreadStart childref2 = new ThreadStart(Poll3);
+            Console.WriteLine("In Main: Creating the Child thread");
+            Thread childThread2 = new Thread(childref2);
+            childThread2.Start();
+
+            var properties = model.CreateBasicProperties();
+            properties.Persistent = true;
+
+            byte[] messageBuffer = Encoding.Default.GetBytes("this is a fanout message");
+            model.BasicPublish("pubSubMessagingExchange", "", properties, messageBuffer);
+            Console.WriteLine("Message sent");
+
+            Console.ReadLine();
         }
 
         static void receiver2()
