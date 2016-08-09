@@ -24,7 +24,82 @@ namespace net_rabbitmq
             //useDurableQueue();
             //oneWayMessaging();
             //workerQueue();
-            pubSubMessaging();
+            //pubSubMessaging();
+            usingRPC();
+        }
+
+        private static void usingRPC()
+        {
+            var connFactory = new RabbitMQ.Client.ConnectionFactory()
+            {
+                UserName = UserName,
+                Password = Password,
+                HostName = HostName
+            };
+            var conn = connFactory.CreateConnection();
+            var model = conn.CreateModel();
+
+            model.QueueDeclare("rpcRequestQueue", false, false, false, null);
+            Console.WriteLine("RPC Request Queue created");
+
+            //creating dynamic response queue
+            var conn2 = connFactory.CreateConnection();
+            var model2 = conn2.CreateModel();
+
+            var _responseQueue = model2.QueueDeclare().QueueName;
+            Console.WriteLine("RPC Response Queue created " + _responseQueue);
+            var _consumer = new QueueingBasicConsumer(model2);
+            model2.BasicConsume(_responseQueue, true, _consumer);
+
+            ThreadStart childref = new ThreadStart(rpcConsumer);
+            Console.WriteLine("In Main: Creating the Child thread");
+            Thread childThread = new Thread(childref);
+            childThread.Start();
+
+            var correlationToken = Guid.NewGuid().ToString();
+            var properties = model2.CreateBasicProperties();
+            properties.ReplyTo = _responseQueue;
+            properties.CorrelationId = correlationToken;
+            byte[] messageBuffer = Encoding.Default.GetBytes("rpc message");
+            var timeoutAt = DateTime.Now + new TimeSpan(0, 0, 3, 0);
+            model2.BasicPublish("", "rpcRequestQueue", properties, messageBuffer);
+            while (DateTime.Now <= timeoutAt)
+            {
+                var deliveryArgs = (BasicDeliverEventArgs)_consumer.Queue.Dequeue();
+                if (deliveryArgs.BasicProperties != null && deliveryArgs.BasicProperties.CorrelationId == correlationToken)
+                {
+                    var response = Encoding.Default.GetString(deliveryArgs.Body);
+                    Console.WriteLine("Response - {0}", response);
+                    model.BasicAck(deliveryArgs.DeliveryTag, false);
+                }
+            }
+
+            Console.ReadLine();
+        }
+
+        private static void rpcConsumer()
+        {
+            var connFactory = new RabbitMQ.Client.ConnectionFactory()
+            {
+                UserName = UserName,
+                Password = Password,
+                HostName = HostName
+            };
+            var conn = connFactory.CreateConnection();
+            var model = conn.CreateModel();
+            model.BasicQos(0, 1, false);
+            var consumer = new QueueingBasicConsumer(model);
+            model.BasicConsume("rpcRequestQueue", false, consumer);
+            var deliveryArgs = (BasicDeliverEventArgs)consumer.Queue.Dequeue();
+            var message = Encoding.Default.GetString(deliveryArgs.Body);
+            Console.WriteLine("RPC Consumer received: {0}", message);
+            var response = string.Format("Processed message - {0} : Response is good", message);
+
+            var replyProperties = model.CreateBasicProperties();
+            replyProperties.CorrelationId = deliveryArgs.BasicProperties.CorrelationId;
+            byte[] messageBuffer = Encoding.Default.GetBytes(response);
+            model.BasicPublish("", deliveryArgs.BasicProperties.ReplyTo, replyProperties, messageBuffer);
+            model.BasicAck(deliveryArgs.DeliveryTag, false);
         }
 
         private static void Poll2()
